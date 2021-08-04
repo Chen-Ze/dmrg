@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.sparse.linalg import eigsh
+import util
 
 from collections import namedtuple
 
@@ -15,8 +16,8 @@ creation                = np.matrix([[0, 0], [1, 0]], dtype='d') # occupied as [
 annihilation            = creation.H
 up_creation             = np.kron(creation, np.eye(model_d))
 up_annihilation         = np.kron(annihilation, np.eye(model_d))
-down_creation           = np.kron(np.eye(model_d), creation)
-down_annihilation       = np.kron(np.eye(model_d), annihilation)
+down_creation           = np.kron(np.eye(model_d), creation) # np.kron(util.sigma_product(model_d), creation)
+down_annihilation       = np.kron(np.eye(model_d), annihilation) # np.kron(util.sigma_product(model_d), annihilation)
 
 def initial_block(hamiltonianParameters):
     # hamiltonian = (
@@ -27,43 +28,52 @@ def initial_block(hamiltonianParameters):
     operators = {
         "hamiltonian":          np.matrix([[0]], dtype='d'),
         "border_up_creation":   np.matrix([[0]], dtype='d'),
-        "border_down_creation": np.matrix([[0]], dtype='d')
+        "border_down_creation": np.matrix([[0]], dtype='d'),
+        "anti_symmetrizer":     np.matrix([[1]], dtype='d')
     }
     return Block(0, 1, operators, None, [], [])
-    
 
 def enlarge_block(block, hamiltonianParameters):
     old_d = block.dimension
     old_hamiltonian                 = block.operators["hamiltonian"]
     old_border_up_creation          = block.operators["border_up_creation"]
     old_border_down_creation        = block.operators["border_down_creation"]
+    old_anti_symmetrizer            = block.operators["anti_symmetrizer"]
+
+    assert old_anti_symmetrizer.shape == (old_d, old_d)
+
+    new_border_up_creation      = np.kron(old_anti_symmetrizer, up_creation)
+    new_border_down_creation    = np.kron(old_anti_symmetrizer, down_creation)
 
     new_site_hamiltonian = (
         -hamiltonianParameters.t * (
-            np.kron(old_border_up_creation,   up_annihilation) +
-            np.kron(old_border_down_creation, down_annihilation) +
-            np.kron(old_border_up_creation,   up_annihilation).H +
-            np.kron(old_border_down_creation, down_annihilation).H
+            # np.kron(old_border_up_creation,   up_annihilation) +
+            # np.kron(old_border_down_creation, down_annihilation) +
+            # np.kron(old_border_up_creation,   up_annihilation).H +
+            # np.kron(old_border_down_creation, down_annihilation).H
+            np.kron(old_border_up_creation, np.eye(model_d * model_d)) * new_border_up_creation.H +
+            np.kron(old_border_down_creation, np.eye(model_d * model_d)) * new_border_down_creation.H +
+            (np.kron(old_border_up_creation, np.eye(model_d * model_d)) * new_border_up_creation.H).H +
+            (np.kron(old_border_down_creation, np.eye(model_d * model_d)) * new_border_down_creation.H).H
         ) +
         hamiltonianParameters.U * (
-            np.kron(
-                np.eye(old_d),
-                up_creation * up_annihilation * down_creation * down_annihilation
-            )
+            new_border_up_creation * new_border_up_creation.H *
+            new_border_down_creation * new_border_down_creation.H
         )
     )
     new_hamiltonian = (
         np.kron(old_hamiltonian, np.eye(model_d * model_d)) + # the old part
         new_site_hamiltonian
     )
-
-    new_border_up_creation      = np.kron(np.eye(old_d), up_creation)
-    new_border_down_creation    = np.kron(np.eye(old_d), down_creation)
+    
+    # new_anti_symmetrizer = np.kron(old_anti_symmetrizer, np.kron(util.sigma_z, util.sigma_z))
+    new_anti_symmetrizer = np.kron(old_anti_symmetrizer, np.eye(4))
 
     new_operators = {
         "hamiltonian":          new_hamiltonian,
         "border_up_creation":   new_border_up_creation,
-        "border_down_creation": new_border_down_creation
+        "border_down_creation": new_border_down_creation,
+        "anti_symmetrizer":     new_anti_symmetrizer
     }
 
     new_upcreations   = list(map(lambda c: np.kron(c, np.eye(model_d * model_d)), block.up_creations))
@@ -214,10 +224,21 @@ class DMRG:
 
 
 if __name__ == "__main__":
+    assert isinstance(up_creation,          np.matrix)
+    assert isinstance(up_annihilation,      np.matrix)
+    assert isinstance(down_creation,        np.matrix)
+    assert isinstance(down_annihilation,    np.matrix)
+
     np.set_printoptions(precision=10, suppress=True, threshold=10000, linewidth=300)
 
-    dmrg = DMRG(HamiltonianParameters(t=0.5, U=0))
-    l_block, r_block = dmrg.finite_system_dmrg(24, 25, [25])
+    dmrg = DMRG(HamiltonianParameters(t=0.5, U=1))
+    l_block, r_block = dmrg.finite_system_dmrg(10, 20, [20])
     print(l_block.result)
     print(r_block.result)
+
+    # block = initial_block(HamiltonianParameters(t=0.5, U=1))
+    # for i in range(6):
+    #     block = enlarge_block(block, HamiltonianParameters(t=0.5, U=1))
+    #     print(min(np.linalg.eigh(block.operators["hamiltonian"])[0]) / (i + 1))
+
 
