@@ -15,7 +15,7 @@ def sigma_product(dimension):
 
 t = 0.5 # hopping t
 U = 1.0 # on-site U
-L = 4   # number of sites
+L = 6   # number of sites
 
 d_spin          = 2 # number of states on each site of a fixed spin: occupied / not occupied
 d_site          = d_spin * d_spin # number of states on each site
@@ -50,4 +50,8 @@ on_sites = map(
 H = sum(up_hoppings) + sum(down_hoppings) + sum(on_sites)
 
 assert H.shape == (d_site ** L, d_site ** L)
+print(f"Number of nonzero elements: {H.count_nonzero()}.")
+print(f"Number of entries elements: {(d_site ** L) * (d_site ** L)}.")
+print(f"Occupancy {H.count_nonzero() / ((d_site ** L) * (d_site ** L))}.")
+
 print(linalg.eigsh(H, k=1, which="SA")[0][0] / L)
